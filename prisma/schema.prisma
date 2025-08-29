@@ -1,0 +1,315 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  timezone     String?
+  country      String?
+  styleTags    String[]
+  budgetRange  IntRange?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  bodyProfile   BodyProfile?
+  items         Item[]
+  outfits       Outfit[]
+  events        Event[]
+  auditLogs     AuditLog[]
+  
+  // Creator mode
+  capsules      Capsule[]
+  shares        Share[]
+  
+  // Multi-user households
+  householdMemberships HouseholdMember[]
+  ownedHouseholds     Household[] @relation("HouseholdOwner")
+  
+  // Price tracking
+  priceAlerts   PriceAlert[]
+
+  @@map("users")
+}
+
+model BodyProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  heightCm     Int?
+  weightKg     Int?
+  measurements Json?
+  silhouette   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("body_profiles")
+}
+
+model Item {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String?
+  brand     String?
+  category  String
+  colors    String[]
+  pattern   String?
+  fabric    String?
+  size      String?
+  notes     String?
+  imageS3   String
+  maskS3    String?
+  phash     String?
+  attributes Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Sustainability
+  sustainabilityScore Int?
+  sustainabilityBadges String[]
+  
+  // Multi-user
+  householdId String?
+
+  // Relations
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household      Household?       @relation(fields: [householdId], references: [id])
+  embedding      ItemEmbedding?
+  outfitItems    OutfitItem[]
+  capsuleItems   CapsuleItem[]
+
+  @@map("items")
+}
+
+model ItemEmbedding {
+  id        String   @id @default(cuid())
+  itemId    String   @unique
+  clip      Unsupported("vector(768)")?
+  colorLab  Unsupported("vector(3)")?
+  style     Unsupported("vector(128)")?
+  createdAt DateTime @default(now())
+
+  // Relations
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("item_embeddings")
+}
+
+model Outfit {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String?
+  occasion  String
+  season    String?
+  score     Decimal?
+  rationale String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       OutfitItem[]
+  shopLinks   ShopLink[]
+
+  @@map("outfits")
+}
+
+model OutfitItem {
+  outfitId String
+  itemId   String
+  slot     String
+
+  // Relations
+  outfit Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([outfitId, slot])
+  @@map("outfit_items")
+}
+
+model CatalogProduct {
+  id             String   @id @default(cuid())
+  retailer       String
+  productId      String
+  name           String
+  brand          String?
+  category       String
+  priceCents     Int
+  currency       String
+  url            String
+  imageUrl       String?
+  sizeMap        Json?
+  colors         String[]
+  sustainability String[]
+  availability   Json?
+  embedding      Unsupported("vector(768)")?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  shopLinks     ShopLink[]
+  priceHistory  PriceHistory[]
+  priceAlerts   PriceAlert[]
+
+  @@map("catalog_products")
+}
+
+model ShopLink {
+  outfitId   String
+  productId  String
+  reason     String?
+  score      Decimal?
+
+  // Relations
+  outfit  Outfit          @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  product CatalogProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([outfitId, productId])
+  @@map("shop_links")
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  date       DateTime
+  location   String?
+  dressCode  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("events")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  target    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_log")
+}
+
+// Creator mode models
+model Capsule {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  shareCode   String?  @unique
+  watermark   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CapsuleItem[]
+  shares Share[]
+
+  @@map("capsules")
+}
+
+model CapsuleItem {
+  capsuleId String
+  itemId    String
+  order     Int     @default(0)
+
+  capsule Capsule @relation(fields: [capsuleId], references: [id], onDelete: Cascade)
+  item    Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([capsuleId, itemId])
+  @@map("capsule_items")
+}
+
+model Share {
+  id        String   @id @default(cuid())
+  userId    String
+  capsuleId String
+  shareUrl  String   @unique
+  views     Int      @default(0)
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  capsule Capsule @relation(fields: [capsuleId], references: [id], onDelete: Cascade)
+
+  @@map("shares")
+}
+
+// Multi-user household models
+model Household {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members HouseholdMember[]
+  items   Item[]
+
+  @@map("households")
+}
+
+model HouseholdMember {
+  id          String   @id @default(cuid())
+  householdId String
+  userId      String
+  role        String   @default("member") // owner, admin, member
+  joinedAt    DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, userId])
+  @@map("household_members")
+}
+
+// Price tracking models
+model PriceHistory {
+  id        String   @id @default(cuid())
+  productId String
+  priceCents Int
+  currency  String
+  timestamp DateTime @default(now())
+
+  product CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("price_history")
+}
+
+model PriceAlert {
+  id           String   @id @default(cuid())
+  userId       String
+  productId    String
+  targetPrice  Int
+  currency     String
+  isActive     Boolean  @default(true)
+  notifiedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("price_alerts")
+}
